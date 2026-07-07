@@ -38,6 +38,7 @@ export default defineConfig({
     cloudflare({
       viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
       config: localBindingConfig,
+      inspectorPort: false,
     }),
   ],
 });

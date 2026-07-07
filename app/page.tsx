@@ -10,9 +10,20 @@ type Order = {
   quantity: string;
   vendor: string;
   category: string;
+  stock: number;
+  threshold: number;
+  expiryDate: string;
   status: OrderStatus;
   rewarded: boolean;
   createdAt: string;
+};
+
+type Booking = {
+  id: number;
+  customer: string;
+  service: string;
+  time: string;
+  note: string;
 };
 
 type Memo = {
@@ -27,32 +38,32 @@ type PointLog = {
   id: number;
   label: string;
   amount: number;
-  type: "order" | "memo" | "bonus" | "exchange";
+  type: "order" | "memo" | "bonus" | "exchange" | "raffle" | "perk";
 };
 
 const industryTemplates = {
   convenience: {
     label: "편의점",
     items: [
-      ["삼각김밥", "24개", "푸드온"],
-      ["생수 500ml", "2박스", "해맑은물류"],
-      ["바나나 우유", "18개", "밀크라인"],
+      ["삼각김밥", "24개", "푸드온", 8, 12, "2026-07-09"],
+      ["생수 500ml", "2박스", "해맑은물류", 18, 24, "2026-08-20"],
+      ["바나나 우유", "18개", "밀크라인", 6, 10, "2026-07-10"],
     ],
   },
   cafe: {
     label: "카페",
     items: [
-      ["원두 블렌드", "5kg", "로스터리봄"],
-      ["오트 밀크", "12개", "데일리유통"],
-      ["테이크아웃 컵", "1박스", "패키지허브"],
+      ["원두 블렌드", "5kg", "로스터리봄", 2, 3, "2026-09-15"],
+      ["오트 밀크", "12개", "데일리유통", 5, 8, "2026-07-18"],
+      ["테이크아웃 컵", "1박스", "패키지허브", 1, 2, "2027-01-01"],
     ],
   },
   salon: {
     label: "미용실",
     items: [
-      ["컬러 크림 7N", "6개", "헤어프로"],
-      ["산화제 6%", "4개", "뷰티서플라이"],
-      ["위생 타월", "30장", "클린샵"],
+      ["컬러 크림 7N", "6개", "헤어프로", 1, 3, "2027-03-01"],
+      ["산화제 6%", "4개", "뷰티서플라이", 2, 4, "2026-11-20"],
+      ["위생 타월", "30장", "클린샵", 12, 20, "2027-05-01"],
     ],
   },
 };
@@ -64,6 +75,9 @@ const initialOrders: Order[] = [
     quantity: "18개",
     vendor: "푸드온",
     category: "편의점",
+    stock: 6,
+    threshold: 12,
+    expiryDate: "2026-07-09",
     status: "pending",
     rewarded: false,
     createdAt: "오늘 08:20",
@@ -74,6 +88,9 @@ const initialOrders: Order[] = [
     quantity: "3박스",
     vendor: "해맑은물류",
     category: "편의점",
+    stock: 1,
+    threshold: 2,
+    expiryDate: "2027-01-15",
     status: "done",
     rewarded: true,
     createdAt: "오늘 07:45",
@@ -84,6 +101,9 @@ const initialOrders: Order[] = [
     quantity: "20개",
     vendor: "밀크라인",
     category: "편의점",
+    stock: 5,
+    threshold: 10,
+    expiryDate: "2026-07-10",
     status: "pending",
     rewarded: false,
     createdAt: "어제 17:10",
@@ -107,10 +127,27 @@ const initialMemos: Memo[] = [
   },
 ];
 
+const initialBookings: Booking[] = [
+  {
+    id: 1,
+    customer: "김민지",
+    service: "커트",
+    time: "10:00",
+    note: "선불권 확인",
+  },
+  {
+    id: 2,
+    customer: "박소연",
+    service: "염색",
+    time: "14:00",
+    note: "7N 컬러",
+  },
+];
+
 const initialPointLogs: PointLog[] = [
-  { id: 1, label: "아이스컵 대형 발주 완료", amount: 2, type: "order" },
-  { id: 2, label: "업무 메모 작성", amount: 1, type: "memo" },
-  { id: 3, label: "7일 연속 사용 보너스", amount: 50, type: "bonus" },
+  { id: 1, label: "7일 연속 업무 기록 유지", amount: 50, type: "bonus" },
+  { id: 2, label: "이중 발주 0건 달성 주간", amount: 40, type: "bonus" },
+  { id: 3, label: "이번 달 래플 응모권 1장", amount: 0, type: "raffle" },
 ];
 
 const screeningRules = [
@@ -155,17 +192,37 @@ function getScoreTone(score: number) {
   return "border-emerald-200 bg-emerald-50 text-emerald-900";
 }
 
+function getDaysUntil(date: string) {
+  const today = new Date("2026-07-07T00:00:00+09:00");
+  const target = new Date(`${date}T00:00:00+09:00`);
+  return Math.ceil((target.getTime() - today.getTime()) / 86_400_000);
+}
+
+function getExpiryLabel(date: string) {
+  const days = getDaysUntil(date);
+  if (days < 0) return "유통기한 지남";
+  if (days === 0) return "오늘까지";
+  return `D-${days}`;
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState("home");
   const [industry, setIndustry] =
     useState<keyof typeof industryTemplates>("convenience");
   const [orders, setOrders] = useState<Order[]>(initialOrders);
   const [memos, setMemos] = useState<Memo[]>(initialMemos);
+  const [bookings, setBookings] = useState<Booking[]>(initialBookings);
   const [pointLogs, setPointLogs] = useState<PointLog[]>(initialPointLogs);
   const [orderItem, setOrderItem] = useState("");
   const [orderQuantity, setOrderQuantity] = useState("");
   const [orderVendor, setOrderVendor] = useState("");
+  const [orderStock, setOrderStock] = useState("0");
+  const [orderThreshold, setOrderThreshold] = useState("5");
+  const [orderExpiryDate, setOrderExpiryDate] = useState("2026-07-12");
   const [memoText, setMemoText] = useState("");
+  const [bookingCustomer, setBookingCustomer] = useState("");
+  const [bookingService, setBookingService] = useState("");
+  const [bookingTime, setBookingTime] = useState("10:00");
   const [onboardingStep, setOnboardingStep] = useState(1);
   const [patternConsent, setPatternConsent] = useState(false);
   const [testAnswers, setTestAnswers] = useState({
@@ -186,6 +243,18 @@ export default function Home() {
     const names = orders.map((order) => order.item.trim()).filter(Boolean);
     return names.filter((name, index) => names.indexOf(name) !== index).length;
   }, [orders]);
+
+  const duplicateOrderWarning = useMemo(() => {
+    const normalized = orderItem.trim().replace(/\s/g, "");
+    if (!normalized) return null;
+    return orders.find(
+      (order) => order.item.trim().replace(/\s/g, "") === normalized,
+    );
+  }, [orderItem, orders]);
+
+  const bookingConflict = useMemo(() => {
+    return bookings.find((booking) => booking.time === bookingTime);
+  }, [bookingTime, bookings]);
 
   const brainScore = useMemo(() => {
     const memoScore =
@@ -226,6 +295,9 @@ export default function Home() {
       quantity: orderQuantity.trim() || "1개",
       vendor: orderVendor.trim() || "거래처 미지정",
       category: industryTemplates[industry].label,
+      stock: Number(orderStock) || 0,
+      threshold: Number(orderThreshold) || 0,
+      expiryDate: orderExpiryDate,
       status: "pending",
       rewarded: false,
       createdAt: "방금",
@@ -234,16 +306,21 @@ export default function Home() {
     setOrderItem("");
     setOrderQuantity("");
     setOrderVendor("");
+    setOrderStock("0");
+    setOrderThreshold("5");
   };
 
   const applyTemplate = () => {
     const template = industryTemplates[industry];
-    const nextOrders = template.items.map(([item, quantity, vendor], index) => ({
+    const nextOrders = template.items.map(([item, quantity, vendor, stock, threshold, expiryDate], index) => ({
       id: Date.now() + index,
-      item,
-      quantity,
-      vendor,
+      item: String(item),
+      quantity: String(quantity),
+      vendor: String(vendor),
       category: template.label,
+      stock: Number(stock),
+      threshold: Number(threshold),
+      expiryDate: String(expiryDate),
       status: "pending" as OrderStatus,
       rewarded: false,
       createdAt: "방금",
@@ -252,10 +329,6 @@ export default function Home() {
   };
 
   const toggleOrder = (id: number) => {
-    const target = orders.find((order) => order.id === id);
-    if (target?.status !== "done" && target?.rewarded === false) {
-      addPointLog(`${target.item} 발주 완료`, 2, "order");
-    }
     setOrders((current) =>
       current.map((order) => {
         if (order.id !== id) return order;
@@ -285,8 +358,29 @@ export default function Home() {
       createdAt: "방금",
     };
     setMemos((current) => [nextMemo, ...current]);
-    addPointLog("업무 메모 작성", 1, "memo");
     setMemoText("");
+  };
+
+  const handleVoiceMemo = () => {
+    setMemoText("원터치 음성 입력 예시: 오늘 오후 김민지 손님 예약 확인");
+  };
+
+  const handleAddBooking = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!bookingCustomer.trim() || !bookingService.trim()) return;
+    if (bookingConflict) return;
+    const nextBooking: Booking = {
+      id: Date.now(),
+      customer: bookingCustomer.trim(),
+      service: bookingService.trim(),
+      time: bookingTime,
+      note: "링크 공유 스케줄에 표시",
+    };
+    setBookings((current) =>
+      [...current, nextBooking].sort((a, b) => a.time.localeCompare(b.time)),
+    );
+    setBookingCustomer("");
+    setBookingService("");
   };
 
   const exchangePoints = (provider: string) => {
@@ -304,6 +398,9 @@ export default function Home() {
     ["orders", "발주"],
     ["memos", "메모"],
     ["points", "포인트"],
+  ];
+
+  const moreTabs = [
     ["report", "리포트"],
     ["test", "2단계 테스트"],
     ["watch", "워치"],
@@ -327,7 +424,10 @@ export default function Home() {
           <div className="grid grid-cols-3 gap-2 text-sm">
             <Metric label="오늘 적립" value={`${todayPoints}P`} />
             <Metric label="포인트 잔액" value={`${points}P`} />
-            <Metric label="두뇌 활동" value={getScoreLabel(brainScore)} />
+            <Metric
+              label={patternConsent ? "두뇌 활동" : "업무 보호"}
+              value={patternConsent ? getScoreLabel(brainScore) : "안내 전"}
+            />
           </div>
         </header>
 
@@ -346,6 +446,20 @@ export default function Home() {
               {label}
             </button>
           ))}
+          <select
+            className="h-10 shrink-0 rounded-lg border border-[#d8d0c2] bg-white px-3 text-sm font-semibold text-[#4d463e]"
+            onChange={(event) => {
+              if (event.target.value) setActiveTab(event.target.value);
+            }}
+            value={moreTabs.some(([key]) => key === activeTab) ? activeTab : ""}
+          >
+            <option value="">더보기</option>
+            {moreTabs.map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
         </nav>
 
         <section className="mt-4 grid gap-4 lg:grid-cols-[260px_1fr]">
@@ -446,6 +560,7 @@ export default function Home() {
                 memoText={memoText}
                 onMemoChange={setMemoText}
                 onMemoSubmit={handleAddMemo}
+                onVoiceMemo={handleVoiceMemo}
                 orders={orders}
                 patternConsent={patternConsent}
                 points={points}
@@ -459,11 +574,18 @@ export default function Home() {
                 handleAddOrder={handleAddOrder}
                 orderItem={orderItem}
                 orderQuantity={orderQuantity}
+                orderStock={orderStock}
+                orderThreshold={orderThreshold}
                 orderVendor={orderVendor}
+                orderExpiryDate={orderExpiryDate}
                 orders={orders}
+                duplicateOrderWarning={duplicateOrderWarning}
                 setOrderItem={setOrderItem}
                 setOrderQuantity={setOrderQuantity}
+                setOrderStock={setOrderStock}
+                setOrderThreshold={setOrderThreshold}
                 setOrderVendor={setOrderVendor}
+                setOrderExpiryDate={setOrderExpiryDate}
                 toggleOrder={toggleOrder}
               />
             )}
@@ -472,8 +594,19 @@ export default function Home() {
               <MemosPanel
                 memoText={memoText}
                 memos={memos}
+                bookings={bookings}
+                bookingConflict={bookingConflict}
+                bookingCustomer={bookingCustomer}
+                bookingService={bookingService}
+                bookingTime={bookingTime}
+                handleAddBooking={handleAddBooking}
                 onMemoChange={setMemoText}
                 onMemoSubmit={handleAddMemo}
+                onVoiceMemo={handleVoiceMemo}
+                patternConsent={patternConsent}
+                setBookingCustomer={setBookingCustomer}
+                setBookingService={setBookingService}
+                setBookingTime={setBookingTime}
               />
             )}
 
@@ -490,11 +623,12 @@ export default function Home() {
                 brainScore={brainScore}
                 duplicateCount={duplicateCount}
                 memos={memos}
+                patternConsent={patternConsent}
                 setActiveTab={setActiveTab}
               />
             )}
 
-            {activeTab === "test" && (
+            {activeTab === "test" && patternConsent && (
               <TestPanel
                 setTestAnswers={setTestAnswers}
                 submitTest={submitTest}
@@ -503,6 +637,7 @@ export default function Home() {
                 testSubmitted={testSubmitted}
               />
             )}
+            {activeTab === "test" && !patternConsent && <ConsentLockedPanel />}
 
             {activeTab === "watch" && (
               <WatchPanel setWatch={setWatch} watch={watch} />
@@ -530,6 +665,7 @@ function HomePanel({
   memoText,
   onMemoChange,
   onMemoSubmit,
+  onVoiceMemo,
   orders,
   patternConsent,
   points,
@@ -541,6 +677,7 @@ function HomePanel({
   memoText: string;
   onMemoChange: (value: string) => void;
   onMemoSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onVoiceMemo: () => void;
   orders: Order[];
   patternConsent: boolean;
   points: number;
@@ -553,7 +690,7 @@ function HomePanel({
           <div>
             <h2 className="text-xl font-bold">오늘의 발주 목록</h2>
             <p className="text-sm text-[#60665f]">
-              완료 처리하면 건당 2포인트가 적립됩니다.
+              중복 발주와 임박 재고를 먼저 막아줍니다.
             </p>
           </div>
           <span className="rounded-md bg-[#edf7f3] px-3 py-2 text-sm font-bold text-[#256f5a]">
@@ -580,7 +717,8 @@ function HomePanel({
               <span>
                 <span className="block font-semibold">{order.item}</span>
                 <span className="block text-sm text-[#646b64]">
-                  {order.quantity} · {order.vendor}
+                  {order.quantity} · 재고 {order.stock}/{order.threshold} ·{" "}
+                  {getExpiryLabel(order.expiryDate)}
                 </span>
               </span>
               <span className="text-xs font-semibold text-[#6b6258]">
@@ -592,21 +730,32 @@ function HomePanel({
       </section>
 
       <section className="rounded-lg border border-[#d8d0c2] bg-white p-4">
-        <div className={`rounded-lg border p-4 ${getScoreTone(brainScore)}`}>
-          <p className="text-sm font-semibold">두뇌 활동 지수</p>
-          <div className="mt-3 flex items-end justify-between gap-4">
-            <p className="text-4xl font-black">{brainScore}</p>
-            <p className="text-right text-sm font-bold">
-              {patternConsent ? getScoreLabel(brainScore) : "동의 대기"}
+        {patternConsent ? (
+          <div className={`rounded-lg border p-4 ${getScoreTone(brainScore)}`}>
+            <p className="text-sm font-semibold">두뇌 활동 지수</p>
+            <div className="mt-3 flex items-end justify-between gap-4">
+              <p className="text-4xl font-black">{brainScore}</p>
+              <p className="text-right text-sm font-bold">
+                {getScoreLabel(brainScore)}
+              </p>
+            </div>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/70">
+              <div
+                className="h-full rounded-full bg-current"
+                style={{ width: `${brainScore}%` }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-[#b8d6cb] bg-[#edf7f3] p-4 text-[#1f5f4d]">
+            <p className="text-sm font-semibold">업무 손실 방지</p>
+            <p className="mt-3 text-2xl font-black">중복·임박 재고 먼저 확인</p>
+            <p className="mt-2 text-sm leading-6">
+              두뇌 활동 리포트는 동의 후에만 보이며, 가입 초기 화면에서는
+              업무 도구 가치만 노출됩니다.
             </p>
           </div>
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/70">
-            <div
-              className="h-full rounded-full bg-current"
-              style={{ width: `${brainScore}%` }}
-            />
-          </div>
-        </div>
+        )}
         <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
           <Metric label="중복 발주 감지" value={`${duplicateCount}건`} />
           <Metric label="누적 포인트" value={`${points}P`} />
@@ -615,6 +764,13 @@ function HomePanel({
           <label className="text-sm font-bold" htmlFor="quickMemo">
             업무 메모 빠른 입력
           </label>
+          <button
+            className="h-10 rounded-lg border border-[#cfc7bb] bg-white text-sm font-bold text-[#2c6b7f]"
+            onClick={onVoiceMemo}
+            type="button"
+          >
+            음성으로 바로 입력
+          </button>
           <textarea
             className="min-h-24 w-full rounded-lg border border-[#cfc7bb] bg-white p-3 text-sm outline-none focus:border-[#256f5a]"
             id="quickMemo"
@@ -636,25 +792,39 @@ function HomePanel({
 
 function OrdersPanel({
   deleteOrder,
+  duplicateOrderWarning,
   handleAddOrder,
   orderItem,
   orderQuantity,
+  orderStock,
+  orderThreshold,
   orderVendor,
+  orderExpiryDate,
   orders,
   setOrderItem,
   setOrderQuantity,
+  setOrderStock,
+  setOrderThreshold,
   setOrderVendor,
+  setOrderExpiryDate,
   toggleOrder,
 }: {
   deleteOrder: (id: number) => void;
+  duplicateOrderWarning: Order | null | undefined;
   handleAddOrder: (event: FormEvent<HTMLFormElement>) => void;
   orderItem: string;
   orderQuantity: string;
+  orderStock: string;
+  orderThreshold: string;
   orderVendor: string;
+  orderExpiryDate: string;
   orders: Order[];
   setOrderItem: (value: string) => void;
   setOrderQuantity: (value: string) => void;
+  setOrderStock: (value: string) => void;
+  setOrderThreshold: (value: string) => void;
   setOrderVendor: (value: string) => void;
+  setOrderExpiryDate: (value: string) => void;
   toggleOrder: (id: number) => void;
 }) {
   return (
@@ -668,6 +838,12 @@ function OrdersPanel({
             placeholder="예: 생수 500ml"
             value={orderItem}
           />
+          {duplicateOrderWarning && (
+            <div className="rounded-lg border border-[#d99b8f] bg-[#fff2ef] p-3 text-sm font-semibold text-[#8f3d31]">
+              오늘 이미 {duplicateOrderWarning.createdAt}에 등록했어요. 이중
+              발주인지 확인해 주세요.
+            </div>
+          )}
           <TextInput
             label="수량"
             onChange={setOrderQuantity}
@@ -679,6 +855,29 @@ function OrdersPanel({
             onChange={setOrderVendor}
             placeholder="예: 해맑은물류"
             value={orderVendor}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <TextInput
+              label="현재 보유"
+              onChange={setOrderStock}
+              placeholder="예: 4"
+              type="number"
+              value={orderStock}
+            />
+            <TextInput
+              label="임계치"
+              onChange={setOrderThreshold}
+              placeholder="예: 10"
+              type="number"
+              value={orderThreshold}
+            />
+          </div>
+          <TextInput
+            label="유통기한"
+            onChange={setOrderExpiryDate}
+            placeholder="2026-07-12"
+            type="date"
+            value={orderExpiryDate}
           />
           <button
             className="h-10 w-full rounded-lg bg-[#1f5f4d] text-sm font-bold text-white"
@@ -707,6 +906,26 @@ function OrdersPanel({
                 <p className="text-sm text-[#646b64]">
                   {order.quantity} · {order.vendor} · {order.category}
                 </p>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold">
+                  <span
+                    className={`rounded-md px-2 py-1 ${
+                      order.stock <= order.threshold
+                        ? "bg-[#fff2cf] text-[#7a5512]"
+                        : "bg-[#edf7f3] text-[#256f5a]"
+                    }`}
+                  >
+                    재고 {order.stock}/{order.threshold}
+                  </span>
+                  <span
+                    className={`rounded-md px-2 py-1 ${
+                      getDaysUntil(order.expiryDate) <= 3
+                        ? "bg-[#fff2ef] text-[#8f3d31]"
+                        : "bg-[#f0e7d6] text-[#6c4f21]"
+                    }`}
+                  >
+                    {getExpiryLabel(order.expiryDate)}
+                  </span>
+                </div>
               </div>
               <button
                 className={`h-10 rounded-lg border text-sm font-bold ${
@@ -735,21 +954,50 @@ function OrdersPanel({
 }
 
 function MemosPanel({
+  bookingConflict,
+  bookingCustomer,
+  bookingService,
+  bookingTime,
+  bookings,
+  handleAddBooking,
   memoText,
   memos,
   onMemoChange,
   onMemoSubmit,
+  onVoiceMemo,
+  patternConsent,
+  setBookingCustomer,
+  setBookingService,
+  setBookingTime,
 }: {
+  bookingConflict: Booking | undefined;
+  bookingCustomer: string;
+  bookingService: string;
+  bookingTime: string;
+  bookings: Booking[];
+  handleAddBooking: (event: FormEvent<HTMLFormElement>) => void;
   memoText: string;
   memos: Memo[];
   onMemoChange: (value: string) => void;
   onMemoSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onVoiceMemo: () => void;
+  patternConsent: boolean;
+  setBookingCustomer: (value: string) => void;
+  setBookingService: (value: string) => void;
+  setBookingTime: (value: string) => void;
 }) {
   return (
     <div className="grid gap-4 xl:grid-cols-[380px_1fr]">
       <section className="rounded-lg border border-[#d8d0c2] bg-white p-4">
         <h2 className="text-xl font-bold">업무 메모</h2>
         <form className="mt-4 space-y-3" onSubmit={onMemoSubmit}>
+          <button
+            className="h-10 w-full rounded-lg border border-[#cfc7bb] bg-white text-sm font-bold text-[#2c6b7f]"
+            onClick={onVoiceMemo}
+            type="button"
+          >
+            음성으로 바로 입력
+          </button>
           <textarea
             className="min-h-40 w-full rounded-lg border border-[#cfc7bb] bg-white p-3 text-sm outline-none focus:border-[#256f5a]"
             onChange={(event) => onMemoChange(event.target.value)}
@@ -765,32 +1013,88 @@ function MemosPanel({
         </form>
       </section>
 
-      <section className="rounded-lg border border-[#d8d0c2] bg-white p-4">
-        <h2 className="text-xl font-bold">자동 분류 기록</h2>
-        <div className="mt-4 space-y-3">
-          {memos.map((memo) => (
-            <article
-              className="rounded-lg border border-[#ded6c9] bg-[#fbfaf7] p-4"
-              key={memo.id}
-            >
-              <p className="text-sm leading-6">{memo.body}</p>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                {memo.tags.map((tag) => (
-                  <span
-                    className="rounded-md bg-[#edf7f3] px-2 py-1 text-xs font-bold text-[#256f5a]"
-                    key={tag}
-                  >
-                    {tag}
-                  </span>
-                ))}
-                <span className="ml-auto text-xs font-bold text-[#6b6258]">
-                  패턴 +{memo.score}
-                </span>
+      <div className="space-y-4">
+        <section className="rounded-lg border border-[#d8d0c2] bg-white p-4">
+          <h2 className="text-xl font-bold">예약 충돌 확인</h2>
+          <form className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_120px] md:items-end" onSubmit={handleAddBooking}>
+            <TextInput
+              label="고객명"
+              onChange={setBookingCustomer}
+              placeholder="예: 이서연"
+              value={bookingCustomer}
+            />
+            <TextInput
+              label="서비스"
+              onChange={setBookingService}
+              placeholder="예: 염색"
+              value={bookingService}
+            />
+            <TextInput
+              label="시간"
+              onChange={setBookingTime}
+              placeholder="10:00"
+              type="time"
+              value={bookingTime}
+            />
+            {bookingConflict && (
+              <div className="rounded-lg border border-[#d99b8f] bg-[#fff2ef] p-3 text-sm font-semibold text-[#8f3d31] md:col-span-3">
+                {bookingTime}에는 {bookingConflict.customer} 고객의{" "}
+                {bookingConflict.service} 예약이 이미 있어요.
               </div>
-            </article>
-          ))}
-        </div>
-      </section>
+            )}
+            <button
+              className="h-10 rounded-lg bg-[#1f5f4d] text-sm font-bold text-white disabled:opacity-45 md:col-span-3"
+              disabled={Boolean(bookingConflict)}
+              type="submit"
+            >
+              예약 추가
+            </button>
+          </form>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {bookings.map((booking) => (
+              <div
+                className="rounded-lg border border-[#ded6c9] bg-[#fbfaf7] p-3"
+                key={booking.id}
+              >
+                <p className="font-black">{booking.time}</p>
+                <p className="mt-1 text-sm font-semibold">
+                  {booking.customer} · {booking.service}
+                </p>
+                <p className="mt-1 text-xs text-[#60665f]">{booking.note}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-lg border border-[#d8d0c2] bg-white p-4">
+          <h2 className="text-xl font-bold">자동 분류 기록</h2>
+          <div className="mt-4 space-y-3">
+            {memos.map((memo) => (
+              <article
+                className="rounded-lg border border-[#ded6c9] bg-[#fbfaf7] p-4"
+                key={memo.id}
+              >
+                <p className="text-sm leading-6">{memo.body}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {memo.tags.map((tag) => (
+                    <span
+                      className="rounded-md bg-[#edf7f3] px-2 py-1 text-xs font-bold text-[#256f5a]"
+                      key={tag}
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                  {patternConsent && (
+                    <span className="ml-auto text-xs font-bold text-[#6b6258]">
+                      활동 신호 +{memo.score}
+                    </span>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
@@ -816,8 +1120,13 @@ function PointsPanel({
           />
         </div>
         <p className="mt-2 text-sm text-[#60665f]">
-          최소 전환 단위 1,000P
+          확정 전환은 유지하고, 래플과 제휴 혜택으로 체감가치를 키웁니다.
         </p>
+        <div className="mt-4 grid gap-2">
+          <Insight label="이번 달 래플" value="상위·스트릭 유지 사용자 중 5만~10만원대 리워드 추첨" />
+          <Insight label="현물 제휴" value="원두 1kg, 소모품 박스 등 협찬형 혜택 후보" />
+          <Insight label="무료 소비처" value="프리미엄 템플릿, 우수 사장님 배지, 리포트 상단 노출" />
+        </div>
         <div className="mt-4 grid grid-cols-2 gap-2">
           <button
             className="h-10 rounded-lg border border-[#cfc7bb] bg-white text-sm font-bold disabled:opacity-40"
@@ -839,6 +1148,9 @@ function PointsPanel({
       </section>
       <section className="rounded-lg border border-[#d8d0c2] bg-white p-4">
         <h2 className="text-xl font-bold">이번 달 적립 내역</h2>
+        <p className="mt-1 text-sm text-[#60665f]">
+          건당 보상보다 습관 형성 마일스톤에 적립을 집중합니다.
+        </p>
         <div className="mt-4 space-y-2">
           {pointLogs.map((log) => (
             <div
@@ -876,13 +1188,17 @@ function ReportPanel({
   brainScore,
   duplicateCount,
   memos,
+  patternConsent,
   setActiveTab,
 }: {
   brainScore: number;
   duplicateCount: number;
   memos: Memo[];
+  patternConsent: boolean;
   setActiveTab: (tab: string) => void;
 }) {
+  if (!patternConsent) return <ConsentLockedPanel />;
+
   const weekly = [22, 24, 26, 21, 28, 31, brainScore];
   return (
     <div className="rounded-lg border border-[#d8d0c2] bg-white p-4">
@@ -921,11 +1237,24 @@ function ReportPanel({
         <Insight label="이번 주 피드백" value="발주 기록이 평소보다 꼼꼼했어요." />
         <Insight label="주의 패턴" value={`중복 발주 ${duplicateCount}건`} />
         <Insight
-          label="언어 패턴"
-          value={`관찰 메모 ${memos.filter((memo) => memo.score > 0).length}건`}
+          label="업무 기록 신호"
+          value={`개선 참고 메모 ${memos.filter((memo) => memo.score > 0).length}건`}
         />
       </div>
     </div>
+  );
+}
+
+function ConsentLockedPanel() {
+  return (
+    <section className="rounded-lg border border-[#d8d0c2] bg-white p-6">
+      <p className="text-sm font-semibold text-[#6b6258]">동의 후 이용</p>
+      <h2 className="mt-2 text-2xl font-black">두뇌 활동 기능은 아직 숨겨져 있어요</h2>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-[#60665f]">
+        가입 초기에는 발주, 메모, 예약, 포인트 기능만 노출합니다. 온보딩
+        Step 2에서 사용자가 명확히 동의한 뒤에만 리포트와 테스트를 보여줍니다.
+      </p>
+    </section>
   );
 }
 
@@ -1086,11 +1415,13 @@ function TextInput({
   label,
   onChange,
   placeholder,
+  type = "text",
   value,
 }: {
   label: string;
   onChange: (value: string) => void;
   placeholder: string;
+  type?: string;
   value: string;
 }) {
   return (
@@ -1100,6 +1431,7 @@ function TextInput({
         className="mt-2 h-10 w-full rounded-lg border border-[#cfc7bb] bg-white px-3 text-sm font-normal outline-none focus:border-[#256f5a]"
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
+        type={type}
         value={value}
       />
     </label>
